@@ -7,7 +7,7 @@ from vsrife import rife
 # Options
 MAX_SHORT_EDGE = 480
 SOURCE_FPS_LIMIT = 62
-MODEL = "4.6"
+MODEL = "4.25.lite"
 FACTOR_NUM = 2
 FACTOR_DEN = 1
 GPU_ID = 0
