@@ -6,7 +6,7 @@ from vsrife import rife
 
 # Options
 MAX_SHORT_EDGE = 1080
-SOURCE_FPS_LIMIT = 32
+SOURCE_FPS_LIMIT = 26
 MODEL = "4.25.lite"
 FACTOR_NUM = 2
 FACTOR_DEN = 1
