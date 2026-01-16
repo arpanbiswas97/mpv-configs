@@ -1,23 +1,29 @@
-import math
+import os
 
 import vapoursynth as vs
 from vapoursynth import core
+from vsmlrt import RIFE, Backend, RIFEModel
 
 # Options
-MAX_SHORT_EDGE = 1080
-SOURCE_FPS_LIMIT = 32
-MODEL = 23
-FACTOR_NUM = 2
-FACTOR_DEN = 1
-GPU_ID = 0
-GPU_THREADS = 2
+MAX_SHORT_EDGE = 1440
+MULTI = 2
+PADDING_MULTI = 32
+MODEL = RIFEModel.v4_6
 SC_MODE = 1
-SKIP = True
-SKIP_THRESHOLD = 60.0
+SOURCE_FPS_LIMIT = 31
+BACKEND = Backend.TRT(
+    fp16=True,
+    force_fp16=True,
+    tf32=True,
+    workspace=None,
+    num_streams=2,
+    use_cuda_graph=True,
+    output_format=1,
+    static_shape=False,
+    # custom_env={"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
+)
 
 clip = video_in
-colorlv = clip.get_frame(0).props._ColorRange
-fmt_src = clip.format
 
 if container_fps > SOURCE_FPS_LIMIT:
     raise Exception(
@@ -46,37 +52,33 @@ else:
     w_ds = MAX_SHORT_EDGE
     h_ds = long_edge
 
-# Make sure the dimensions are even if the input is subsampled
-if fmt_src.subsampling_w or fmt_src.subsampling_h:
-    if not (w_ds % 2 == 0):
-        w_ds = math.floor(w_ds / 2) * 2
-    if not (h_ds % 2 == 0):
-        h_ds = math.floor(h_ds / 2) * 2
-
-# Resize and convert to vs.RGBS
+# Resize and convert to vs.RGBH
 if short_edge > MAX_SHORT_EDGE:
     clip = clip.resize.Bicubic(
-        width=w_ds, height=h_ds, format=vs.RGBS, matrix_in_s="709"
+        width=w_ds, height=h_ds, format=vs.RGBH, matrix_in_s="709", range_in=1
     )
 else:
-    clip = clip.resize.Bilinear(format=vs.RGBS, matrix_in_s="709")
+    clip = clip.resize.Bilinear(format=vs.RGBH, matrix_in_s="709", range_in=1)
+
+
+# Pad to multiple of PADDING_MULTI
+pad_w = (PADDING_MULTI - (clip.width % PADDING_MULTI)) % PADDING_MULTI
+pad_h = (PADDING_MULTI - (clip.height % PADDING_MULTI)) % PADDING_MULTI
+if pad_w > 0 or pad_h > 0:
+    clip = core.std.AddBorders(clip, right=pad_w, bottom=pad_h)
 
 # RIFE
-clip = core.rife.RIFE(
+clip = RIFE(
     clip=clip,
+    multi=MULTI,
     model=MODEL,
-    factor_num=FACTOR_NUM,
-    factor_den=FACTOR_DEN,
-    gpu_id=GPU_ID,
-    gpu_thread=GPU_THREADS,
-    sc=True if SC_MODE else False,
-    skip=SKIP,
-    skip_threshold=SKIP_THRESHOLD,
+    backend=BACKEND,
 )
 
+# Remove padding
+clip = core.std.Crop(clip, right=pad_w, bottom=pad_h)
+
 # Convert back to vs.YUV420P8
-clip = clip.resize.Bilinear(
-    format=fmt_src.id, matrix_s="709", range=1 if colorlv == 0 else None
-)
+clip = clip.resize.Bilinear(format=vs.YUV420P8, matrix_s="709", range=1)
 
 clip.set_output()
